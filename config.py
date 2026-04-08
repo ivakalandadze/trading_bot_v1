@@ -28,11 +28,6 @@ ALPACA_API_KEY: str    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY: str = os.getenv("ALPACA_SECRET_KEY", "")
 ALPACA_BASE_URL: str   = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
 
-# ── Binance ───────────────────────────────────────────────────────────────────
-BINANCE_API_KEY: str    = os.getenv("BINANCE_API_KEY", "")
-BINANCE_SECRET_KEY: str = os.getenv("BINANCE_SECRET_KEY", "")
-BINANCE_TESTNET: bool   = os.getenv("BINANCE_TESTNET", "True").lower() == "true"
-
 # ── Anthropic ─────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 LLM_MODEL: str         = "claude-sonnet-4-6"
@@ -51,10 +46,11 @@ STOCK_UNIVERSE: list[str] = [
 ]
 
 # ── Crypto Universe ───────────────────────────────────────────────────────────
-CRYPTO_UNIVERSE: list[str] = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT",
-    "XRPUSDT", "DOTUSDT", "AVAXUSDT", "MATICUSDT", "LINKUSDT",
-]
+# Disabled: the analysis techniques are stock-focused (DCF, Earnings, Dividend,
+# Competitive, Portfolio all either don't apply or give generic scores for crypto).
+# Only T6_Technical and T9_Patterns give crypto genuine analysis, which is
+# insufficient signal quality. Re-enable if dedicated crypto techniques are added.
+CRYPTO_UNIVERSE: list[str] = []
 
 # ── Macro Tickers (via yfinance) ──────────────────────────────────────────────
 MACRO_TICKERS = {

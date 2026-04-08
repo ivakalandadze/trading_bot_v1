@@ -105,8 +105,9 @@ def fmt_pnl(val):
 def print_status(engine):
     status = engine.get_status()
     mode   = status["mode"].upper()
+    db_file = config.DATABASE_PATH
 
-    print_section(f"BOT STATUS — {mode} MODE")
+    print_section(f"BOT STATUS — {mode} MODE  [{db_file}]")
 
     # Account
     account = status.get("account", {})
@@ -427,8 +428,11 @@ def main():
                         help="Analyse a single symbol and exit")
     parser.add_argument("--interval", type=int,
                         help="Scan interval in minutes (overrides config)")
-    parser.add_argument("--run",      action="store_true",
+    parser.add_argument("--run",       action="store_true",
                         help="Skip menu and start trading loop immediately (for server/service use)")
+    parser.add_argument("--portfolio", type=str, default=None,
+                        help="Portfolio name — each name gets its own isolated database "
+                             "(e.g. --portfolio aggressive). Defaults to 'default'.")
     args = parser.parse_args()
 
     import importlib
@@ -436,6 +440,10 @@ def main():
         os.environ["TRADING_MODE"] = args.mode
     if args.capital:
         os.environ["PAPER_CAPITAL"] = str(args.capital)
+    if args.portfolio:
+        # Each portfolio name gets its own SQLite file
+        safe_name = args.portfolio.replace(" ", "_").lower()
+        os.environ["DATABASE_PATH"] = f"trading_bot_{safe_name}.db"
     importlib.reload(config)
 
     print_banner()
@@ -454,7 +462,10 @@ def main():
         importlib.reload(config)
         args.reset = do_reset
 
-    print(f"\n  Mode: {c(config.TRADING_MODE.upper(), Fore.CYAN)}")
+    portfolio_name = args.portfolio or "default"
+    print(f"\n  Portfolio: {c(portfolio_name, Fore.MAGENTA)}")
+    print(f"  Database:  {config.DATABASE_PATH}")
+    print(f"  Mode: {c(config.TRADING_MODE.upper(), Fore.CYAN)}")
     print(f"  Capital: ${config.PAPER_CAPITAL:,.0f}")
     print(f"  Risk/trade: {config.RISK_PER_TRADE:.0%}")
     print(f"  Min signals: {config.MIN_SIGNALS_TO_TRADE}/10")

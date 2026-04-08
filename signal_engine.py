@@ -158,9 +158,12 @@ class SignalEngine:
                 logger.warning(f"DB signal save error: {e}")
 
         # ── Vote count ────────────────────────────────────────────────────────
+        # Only count votes with meaningful confidence — low-confidence results
+        # (e.g. generic crypto fallbacks at 0.20) count as NEUTRAL, not BUY/SELL.
+        MIN_VOTE_CONFIDENCE = 0.30
         applicable = [r for r in results if r.applicable]
-        buy_votes  = [r for r in applicable if r.is_buy]
-        sell_votes = [r for r in applicable if r.is_sell]
+        buy_votes  = [r for r in applicable if r.is_buy  and r.confidence >= MIN_VOTE_CONFIDENCE]
+        sell_votes = [r for r in applicable if r.is_sell and r.confidence >= MIN_VOTE_CONFIDENCE]
 
         logger.info(f"{symbol}: {len(buy_votes)} BUY / {len(sell_votes)} SELL "
                     f"/ {len(applicable) - len(buy_votes) - len(sell_votes)} NEUTRAL "

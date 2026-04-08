@@ -12,7 +12,7 @@ from typing import Optional
 
 import config
 import database as db
-from data.market_data import get_current_price, is_crypto
+from data.market_data import get_current_price
 from risk_manager import TradeParameters
 
 logger = logging.getLogger(__name__)
@@ -72,8 +72,7 @@ class PaperTrader:
         if cost > cash:
             # Adjust quantity to what we can afford (don't mutate the caller's dataclass)
             max_qty  = cash / params.entry_price
-            quantity = (round(max_qty * 0.99, 6) if is_crypto(params.symbol)
-                        else max(1, int(max_qty * 0.99)))
+            quantity = max(1, int(max_qty * 0.99))
             cost     = params.entry_price * quantity
 
         if quantity <= 0 or cost > cash:
@@ -84,7 +83,7 @@ class PaperTrader:
         # Record trade
         trade_id = db.open_trade(
             symbol     = params.symbol,
-            asset_type = "crypto" if is_crypto(params.symbol) else "stock",
+            asset_type = "stock",
             side       = "BUY",
             quantity   = quantity,
             entry_price = params.entry_price,
@@ -98,7 +97,7 @@ class PaperTrader:
         # Update position
         db.upsert_position(
             symbol      = params.symbol,
-            asset_type  = "crypto" if is_crypto(params.symbol) else "stock",
+            asset_type  = "stock",
             quantity    = quantity,
             entry_price = params.entry_price,
             current_price = params.entry_price,
@@ -143,11 +142,7 @@ class PaperTrader:
         total_qty   = pos["quantity"]
         entry_price = pos["entry_price"]
 
-        sell_qty = total_qty * sell_fraction
-        if is_crypto(symbol):
-            sell_qty = round(sell_qty, 6)
-        else:
-            sell_qty = max(1, int(sell_qty))
+        sell_qty = max(1, int(total_qty * sell_fraction))
 
         remaining_qty = total_qty - sell_qty
         if remaining_qty <= 0:
@@ -162,7 +157,7 @@ class PaperTrader:
         # Record the sold portion as a closed trade
         trade_id = db.open_trade(
             symbol             = symbol,
-            asset_type         = "crypto" if is_crypto(symbol) else "stock",
+            asset_type         = "stock",
             side               = "BUY",
             quantity           = sell_qty,
             entry_price        = entry_price,

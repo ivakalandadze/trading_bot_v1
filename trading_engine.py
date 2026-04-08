@@ -18,7 +18,7 @@ from signal_engine import SignalEngine, TradingSignal
 from llm_judge import LLMJudge
 from risk_manager import RiskManager
 from paper_trader import PaperTrader
-from data.market_data import get_current_price, is_crypto
+from data.market_data import get_current_price
 
 logger = logging.getLogger(__name__)
 
@@ -37,20 +37,17 @@ class TradingEngine:
         # Paper mode
         self.paper_trader  = PaperTrader() if self.mode == "paper" else None
 
-        # Live brokers (lazy init — only if keys are configured)
-        self._alpaca  = None
-        self._binance = None
+        # Live broker (Alpaca — stocks only)
+        self._alpaca = None
         if self.mode == "live":
             self._init_live_brokers()
 
-        self.risk_manager.set_brokers(self._alpaca, self._binance)
+        self.risk_manager.set_brokers(self._alpaca, None)
         logger.info(f"TradingEngine ready | mode={self.mode}")
 
     def _init_live_brokers(self):
-        from broker.alpaca_broker  import AlpacaBroker
-        from broker.binance_broker import BinanceBroker
-        self._alpaca  = AlpacaBroker()
-        self._binance = BinanceBroker()
+        from broker.alpaca_broker import AlpacaBroker
+        self._alpaca = AlpacaBroker()
 
     # ── Main scan & trade loop ────────────────────────────────────────────────
 
@@ -264,19 +261,12 @@ class TradingEngine:
 
     def _execute_live(self, params, judgment, signal: TradingSignal) -> bool:
         symbol = params.symbol
-        broker = self._binance if is_crypto(symbol) else self._alpaca
 
-        if broker is None:
+        if self._alpaca is None:
             logger.error(f"No broker available for {symbol}")
             return False
 
-        # Check broker is up
-        if is_crypto(symbol) and not self._binance.is_available():
-            logger.error("Binance broker not available")
-            return False
-
-        # Execute
-        order_id = broker.buy(
+        order_id = self._alpaca.buy(
             symbol      = symbol,
             quantity    = params.quantity,
             stop_loss   = params.stop_loss,
@@ -287,10 +277,9 @@ class TradingEngine:
             logger.error(f"[LIVE] Order failed for {symbol}")
             return False
 
-        # Record in DB
         trade_id = db.open_trade(
             symbol             = symbol,
-            asset_type         = "crypto" if is_crypto(symbol) else "stock",
+            asset_type         = "stock",
             side               = "BUY",
             quantity           = params.quantity,
             entry_price        = params.entry_price,
@@ -303,7 +292,7 @@ class TradingEngine:
 
         db.upsert_position(
             symbol        = symbol,
-            asset_type    = "crypto" if is_crypto(symbol) else "stock",
+            asset_type    = "stock",
             quantity      = params.quantity,
             entry_price   = params.entry_price,
             current_price = params.entry_price,
@@ -322,9 +311,8 @@ class TradingEngine:
 
     def _close_live_position(self, pos: dict, current_price: float, reason: str) -> None:
         symbol = pos["symbol"]
-        broker = self._binance if is_crypto(symbol) else self._alpaca
-        if broker:
-            broker.sell(symbol, pos["quantity"])
+        if self._alpaca:
+            self._alpaca.sell(symbol, pos["quantity"])
 
         pnl = (current_price - pos["entry_price"]) * pos["quantity"]
         open_trades = db.get_open_trades("live")
@@ -344,13 +332,8 @@ class TradingEngine:
         symbol      = pos["symbol"]
         total_qty   = pos["quantity"]
         entry_price = pos["entry_price"]
-        broker      = self._binance if is_crypto(symbol) else self._alpaca
 
-        sell_qty = total_qty * sell_fraction
-        if is_crypto(symbol):
-            sell_qty = round(sell_qty, 6)
-        else:
-            sell_qty = max(1, int(sell_qty))
+        sell_qty      = max(1, int(total_qty * sell_fraction))
 
         remaining_qty = total_qty - sell_qty
         if remaining_qty <= 0:
@@ -360,15 +343,15 @@ class TradingEngine:
                     "full_close": True, "sell_qty": total_qty, "remaining_qty": 0}
 
         # Execute partial sell via broker
-        if broker:
-            broker.sell(symbol, sell_qty)
+        if self._alpaca:
+            self._alpaca.sell(symbol, sell_qty)
 
         pnl = (current_price - entry_price) * sell_qty
 
         # Record sold portion as a closed trade
         trade_id = db.open_trade(
             symbol             = symbol,
-            asset_type         = "crypto" if is_crypto(symbol) else "stock",
+            asset_type         = "stock",
             side               = "BUY",
             quantity           = sell_qty,
             entry_price        = entry_price,
