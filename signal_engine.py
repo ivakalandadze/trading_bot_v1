@@ -222,7 +222,7 @@ class SignalEngine:
         logger.info(f"Signal generated: {signal}")
         return signal
 
-    def scan_universe(self, max_workers: int = 6) -> list[TradingSignal]:
+    def scan_universe(self, max_workers: int = 3) -> list[TradingSignal]:
         """
         Scan all stocks + crypto in the configured universe.
         Symbols are scanned in parallel (max_workers threads) to cut wall-clock time.
@@ -244,7 +244,7 @@ class SignalEngine:
 
         def _scan_one(symbol: str):
             nonlocal completed
-            time.sleep(0.1)   # small stagger to avoid thundering-herd on yfinance
+            time.sleep(0.5)   # stagger to avoid yfinance rate limits (429 errors)
             result = self.analyse_symbol(symbol)
             completed += 1
             logger.info(f"[{completed}/{total}] {symbol} done")

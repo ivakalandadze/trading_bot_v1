@@ -26,7 +26,7 @@ from data.market_data import get_current_price, is_crypto
 
 logger = logging.getLogger(__name__)
 
-MAX_PORTFOLIO_RISK   = 0.06   # max 6% of capital across all open positions
+MAX_PORTFOLIO_RISK   = 0.20   # max 20% of capital across all open positions (10 × 2%)
 DAILY_LOSS_LIMIT     = -0.05  # halt if daily P&L < -5%
 ATR_PERIOD           = 14
 ATR_MULTIPLIER       = 1.5    # stop-loss = entry ± ATR * multiplier
@@ -178,10 +178,11 @@ class RiskManager:
     def _portfolio_risk_check(self, new_risk: float, capital: float) -> bool:
         """Ensure total portfolio risk stays below MAX_PORTFOLIO_RISK."""
         positions  = db.get_positions(self.mode)
-        # Estimate existing at-risk amounts (rough: risk_per_trade per position)
-        existing_risk = len(positions) * capital * config.RISK_PER_TRADE
+        # Use total portfolio value (not just cash) so corrupted cash doesn't cap risk wrongly
+        total_capital = self._get_total_capital()
+        existing_risk = len(positions) * total_capital * config.RISK_PER_TRADE
         total_risk    = existing_risk + new_risk
-        max_allowed   = capital * MAX_PORTFOLIO_RISK
+        max_allowed   = total_capital * MAX_PORTFOLIO_RISK
 
         if total_risk > max_allowed:
             logger.info(f"Portfolio risk cap reached "
@@ -200,6 +201,13 @@ class RiskManager:
             return False
 
     # ── Capital helpers ───────────────────────────────────────────────────────
+
+    def _get_total_capital(self) -> float:
+        """Return total portfolio value (cash + equity) for risk sizing."""
+        if self.mode == "paper":
+            account = db.get_paper_account()
+            return account.get("total_value") or account.get("cash", config.PAPER_CAPITAL)
+        return self._get_available_capital()
 
     def _get_available_capital(self) -> float:
         """Return available cash from paper account or live broker balance."""

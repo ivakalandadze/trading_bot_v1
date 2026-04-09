@@ -274,6 +274,84 @@ def run_bot(engine, interval_minutes: int = None):
 # Interactive menu
 # ─────────────────────────────────────────────────────────────────────────────
 
+def close_trade_menu(engine):
+    """Interactive menu to manually close one or more open positions."""
+    import database as db
+    positions = db.get_positions(engine.mode)
+    if not positions:
+        print(f"\n  {c('No open positions to close.', Fore.YELLOW)}")
+        return
+
+    print_section("CLOSE POSITIONS MANUALLY")
+    rows = []
+    for i, pos in enumerate(positions, 1):
+        ep  = pos["entry_price"]
+        cp  = pos["current_price"]
+        qty = pos["quantity"]
+        pnl = (cp - ep) * qty
+        rows.append([
+            i,
+            pos["symbol"],
+            f"{qty:.6g}",
+            f"${ep:.4f}",
+            f"${cp:.4f}",
+            fmt_pnl(pnl),
+        ])
+    print(tabulate(rows,
+                   headers=["#", "Symbol", "Qty", "Entry", "Current", "Unrealised P&L"],
+                   tablefmt="rounded_grid" if HAS_TABULATE else "simple"))
+    print(f"\n  Enter position number(s) to close, 'all' to close all, or 0 to cancel.")
+
+    try:
+        raw = input(f"  {c('Choice:', Fore.CYAN)} ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return
+
+    if raw == "0" or raw == "":
+        return
+
+    if raw == "all":
+        targets = positions
+    else:
+        indices = []
+        for part in raw.replace(",", " ").split():
+            try:
+                idx = int(part)
+                if 1 <= idx <= len(positions):
+                    indices.append(idx - 1)
+                else:
+                    print(f"  {c(f'Invalid number: {part}', Fore.RED)}")
+            except ValueError:
+                print(f"  {c(f'Not a number: {part}', Fore.RED)}")
+        targets = [positions[i] for i in indices]
+
+    if not targets:
+        return
+
+    symbols = [p["symbol"] for p in targets]
+    confirm = input(f"  Close {c(', '.join(symbols), Fore.YELLOW)}? (yes/no): ").strip().lower()
+    if confirm not in ("yes", "y"):
+        print(f"  {c('Cancelled.', Fore.YELLOW)}")
+        return
+
+    for pos in targets:
+        symbol = pos["symbol"]
+        if engine.mode == "paper" and engine.paper_trader:
+            pnl = engine.paper_trader.execute_sell(symbol, reason="manual")
+            if pnl is not None:
+                print(f"  {c('Closed', Fore.GREEN)} {symbol} | P&L: {fmt_pnl(pnl)}")
+            else:
+                print(f"  {c(f'Failed to close {symbol}', Fore.RED)}")
+        else:
+            from data.market_data import get_current_price
+            price = get_current_price(symbol)
+            if price:
+                engine._close_live_position(pos, price, reason="manual")
+                print(f"  {c('Closed', Fore.GREEN)} {symbol} @ ${price:.4f}")
+            else:
+                print(f"  {c(f'Could not get price for {symbol}', Fore.RED)}")
+
+
 def interactive_menu(engine, interval_minutes: int = None):
     while True:
         print_section("MAIN MENU")
@@ -282,7 +360,8 @@ def interactive_menu(engine, interval_minutes: int = None):
         print("  [3] View current status & positions")
         print("  [4] Analyse a single symbol")
         print("  [5] View recent trades")
-        print("  [6] Switch mode (Paper ↔ Live)")
+        print("  [6] Close positions manually")
+        print("  [7] Switch mode (Paper ↔ Live)")
         print("  [0] Exit")
 
         try:
@@ -306,7 +385,7 @@ def interactive_menu(engine, interval_minutes: int = None):
             print_status(engine)
 
         elif choice == "4":
-            symbol = input("  Enter symbol (e.g. AAPL or BTCUSDT): ").strip().upper()
+            symbol = input("  Enter symbol (e.g. AAPL): ").strip().upper()
             if symbol:
                 analyse_single(engine, symbol)
 
@@ -333,6 +412,9 @@ def interactive_menu(engine, interval_minutes: int = None):
                 print(f"  {c('No trades yet.', Fore.YELLOW)}")
 
         elif choice == "6":
+            close_trade_menu(engine)
+
+        elif choice == "7":
             current = engine.mode
             new_mode = "live" if current == "paper" else "paper"
             confirm = input(f"  Switch from {current.upper()} to "

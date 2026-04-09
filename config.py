@@ -36,13 +36,30 @@ LLM_MODEL: str         = "claude-sonnet-4-6"
 DATABASE_PATH: str = os.getenv("DATABASE_PATH", "trading_bot.db")
 
 # ── Stock Universe ────────────────────────────────────────────────────────────
-# S&P 500 large-cap sample — expand as needed
+# S&P 500 large-cap — diversified across sectors for broad opportunity
 STOCK_UNIVERSE: list[str] = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM",
-    "JNJ",  "V",    "UNH",  "HD",   "PG",   "MA",   "BAC",  "ABBV",
-    "CVX",  "LLY",  "MRK",  "PFE",  "COST", "TMO",  "AVGO", "MCD",
-    "CSCO", "ACN",  "NEE",  "DHR",  "TXN",  "VZ",   "AMD",  "ADBE",
-    "CRM",  "NFLX", "INTC", "WMT",  "DIS",  "PYPL", "SBUX", "IBM",
+    # Technology
+    "AAPL", "MSFT", "NVDA", "AVGO", "AMD",  "ADBE", "CRM",  "CSCO",
+    "INTC", "TXN",  "QCOM", "NOW",  "ORCL", "IBM",  "MU",   "AMAT",
+    # Communication & Media
+    "GOOGL", "META", "NFLX", "DIS",  "VZ",   "T",
+    # Consumer Discretionary
+    "AMZN", "TSLA", "HD",   "MCD",  "NKE",  "SBUX", "LOW",  "TGT",
+    # Consumer Staples
+    "WMT",  "PG",   "COST", "KO",   "PEP",
+    # Healthcare
+    "JNJ",  "UNH",  "LLY",  "MRK",  "ABBV", "PFE",  "TMO",  "DHR",
+    "AMGN", "GILD", "BMY",  "CVS",
+    # Financials
+    "JPM",  "BAC",  "V",    "MA",   "GS",   "MS",   "AXP",  "BLK",
+    # Energy
+    "CVX",  "XOM",  "SLB",
+    # Industrials
+    "CAT",  "HON",  "UPS",  "BA",   "GE",   "DE",
+    # Utilities & Real Estate
+    "NEE",  "DUK",  "AMT",
+    # Other
+    "ACN",  "PYPL", "ADSK",
 ]
 
 # ── Crypto Universe ───────────────────────────────────────────────────────────

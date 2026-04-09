@@ -368,15 +368,17 @@ def get_macro_data() -> dict:
 
 # Hand-curated sector peers for competitive comparison
 SECTOR_PEERS: dict[str, list[str]] = {
-    "Technology":            ["AAPL","MSFT","GOOGL","META","NVDA","AMD","INTC","AVGO","CSCO","ORCL"],
-    "Consumer Cyclical":     ["AMZN","TSLA","HD","MCD","SBUX","BKNG","TGT","LOW"],
-    "Healthcare":            ["JNJ","UNH","PFE","ABBV","MRK","TMO","DHR","LLY","CVS"],
+    "Technology":            ["AAPL","MSFT","NVDA","AMD","INTC","AVGO","CSCO","ORCL",
+                              "TXN","QCOM","NOW","IBM","MU","AMAT","ADBE","CRM","ADSK"],
+    "Communication Services":["GOOGL","META","NFLX","DIS","T","VZ","CMCSA"],
+    "Consumer Cyclical":     ["AMZN","TSLA","HD","MCD","SBUX","NKE","TGT","LOW"],
+    "Consumer Defensive":    ["PG","WMT","COST","KO","PEP","MDLZ","CL","GIS"],
+    "Healthcare":            ["JNJ","UNH","PFE","ABBV","MRK","TMO","DHR","LLY",
+                              "CVS","AMGN","GILD","BMY"],
     "Financial Services":    ["JPM","BAC","WFC","MS","GS","BLK","V","MA","AXP"],
     "Energy":                ["XOM","CVX","COP","SLB","PSX","EOG","MPC","VLO"],
     "Utilities":             ["NEE","DUK","SO","D","AEP","EXC","SRE","XEL"],
-    "Communication Services":["GOOGL","META","NFLX","DIS","T","VZ","CMCSA"],
-    "Consumer Defensive":    ["PG","WMT","COST","KO","PEP","MDLZ","CL","GIS"],
-    "Industrials":           ["UPS","FDX","CAT","DE","HON","MMM","GE","LMT","RTX"],
+    "Industrials":           ["UPS","FDX","CAT","DE","HON","MMM","GE","LMT","RTX","BA"],
     "Real Estate":           ["AMT","PLD","CCI","EQIX","SPG","O","VICI"],
     "Basic Materials":       ["LIN","APD","SHW","FCX","NEM","DOW","DD"],
 }

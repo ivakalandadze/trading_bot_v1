@@ -9,16 +9,18 @@ Handles both stock (Alpaca) and crypto (Binance) assets.
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, time as dtime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import config
 import database as db
 from signal_engine import SignalEngine, TradingSignal
-from llm_judge import LLMJudge
 from risk_manager import RiskManager
 from paper_trader import PaperTrader
 from data.market_data import get_current_price
+
+US_EASTERN = ZoneInfo("America/New_York")
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,6 @@ class TradingEngine:
     def __init__(self, mode: str = None):
         self.mode          = mode or config.TRADING_MODE
         self.signal_engine = SignalEngine()
-        self.llm_judge     = LLMJudge()
         self.risk_manager  = RiskManager()
 
         # Paper mode
@@ -80,6 +81,17 @@ class TradingEngine:
         elif self.mode == "live":
             self._monitor_live_positions()
 
+        # ── Step 1b: End-of-day — close profitable positions when market closed
+        if self._is_eod_window():
+            eod_closed = self._close_profitable_eod()
+            summary["positions_closed"] += len(eod_closed)
+            if eod_closed:
+                logger.info(f"[EOD] Closed {len(eod_closed)} profitable position(s) "
+                            f"before market close")
+            logger.info("Market is closed — skipping scan and new trades")
+            summary["finished_at"] = datetime.utcnow().isoformat()
+            return summary
+
         # ── Step 2: Scan universe for signals ─────────────────────────────────
         try:
             signals = self.signal_engine.scan_universe()
@@ -93,7 +105,8 @@ class TradingEngine:
         signal_exits = self._check_signal_exits(signals)
         summary["positions_closed"] += len(signal_exits)
 
-        # ── Step 3: Process each signal ───────────────────────────────────────
+        # ── Step 3: Process each signal (best quality first) ─────────────────
+        signals = sorted(signals, key=lambda s: s.score * s.confidence, reverse=True)
         for signal in signals:
             try:
                 executed = self._process_signal(signal)
@@ -131,11 +144,11 @@ class TradingEngine:
             return False
 
         # Quality filters — require high conviction before trading
-        if signal.score < 70:
-            logger.info(f"{symbol}: Score {signal.score:.1f} below 70 threshold — skip")
+        if signal.score < 65:
+            logger.info(f"{symbol}: Score {signal.score:.1f} below 65 threshold — skip")
             return False
-        if signal.confidence < 0.65:
-            logger.info(f"{symbol}: Confidence {signal.confidence:.0%} below 65% threshold — skip")
+        if signal.confidence < 0.55:
+            logger.info(f"{symbol}: Confidence {signal.confidence:.0%} below 55% threshold — skip")
             return False
 
         # Get current price
@@ -160,26 +173,11 @@ class TradingEngine:
             logger.info(f"{symbol}: Risk checks failed — skip")
             return False
 
-        # LLM judgment
-        judgment = self.llm_judge.judge(
-            signal        = signal,
-            current_price = price,
-            stop_loss     = params.stop_loss,
-            take_profit   = params.take_profit,
-        )
-
-        logger.info(f"{symbol}: LLM verdict = {judgment.action} "
-                    f"(conf={judgment.confidence:.0%}) | {judgment.reasoning[:80]}…")
-
-        if not judgment.approved:
-            logger.info(f"{symbol}: LLM rejected — skip")
-            return False
-
         # Execute the trade
         if self.mode == "paper":
-            return self._execute_paper(params, judgment, signal)
+            return self._execute_paper(params, signal)
         else:
-            return self._execute_live(params, judgment, signal)
+            return self._execute_live(params, signal)
 
     # ── High-conviction signal exits ──────────────────────────────────────────
 
@@ -245,10 +243,10 @@ class TradingEngine:
 
     # ── Execution: Paper ──────────────────────────────────────────────────────
 
-    def _execute_paper(self, params, judgment, signal: TradingSignal) -> bool:
+    def _execute_paper(self, params, signal: TradingSignal) -> bool:
         trade_id = self.paper_trader.execute_buy(
             params             = params,
-            llm_reasoning      = judgment.reasoning,
+            llm_reasoning      = "",
             techniques_summary = signal.techniques_summary,
         )
         if trade_id:
@@ -259,7 +257,7 @@ class TradingEngine:
 
     # ── Execution: Live ───────────────────────────────────────────────────────
 
-    def _execute_live(self, params, judgment, signal: TradingSignal) -> bool:
+    def _execute_live(self, params, signal: TradingSignal) -> bool:
         symbol = params.symbol
 
         if self._alpaca is None:
@@ -286,7 +284,7 @@ class TradingEngine:
             stop_loss          = params.stop_loss,
             take_profit        = params.take_profit,
             mode               = "live",
-            llm_reasoning      = judgment.reasoning,
+            llm_reasoning      = "",
             techniques_summary = signal.techniques_summary,
         )
 
@@ -392,6 +390,55 @@ class TradingEngine:
         return {"pnl": pnl, "full_close": False,
                 "sell_qty": sell_qty, "remaining_qty": remaining_qty,
                 "new_stop": new_stop, "new_tp": new_tp}
+
+    # ── End-of-day close ─────────────────────────────────────────────────────
+
+    def _is_eod_window(self) -> bool:
+        """True if market is closed on a weekday (after 4 PM ET or before 9:30 AM ET).
+        Closes profitable positions on the first scan after market close."""
+        now_et = datetime.now(US_EASTERN)
+        if now_et.weekday() >= 5:   # weekend — close any remaining profitable positions
+            return True
+        market_open  = dtime(9, 30)
+        market_close = dtime(16, 0)
+        # After market close or before market open
+        return now_et.time() >= market_close or now_et.time() < market_open
+
+    def _close_profitable_eod(self) -> list[dict]:
+        """
+        Close all profitable open positions before market close.
+        Losers are left alone — stops handle them.
+        Re-entry next morning happens automatically if signal is still strong.
+        """
+        positions = db.get_positions(self.mode)
+        closed = []
+
+        for pos in positions:
+            symbol      = pos["symbol"]
+            entry_price = pos["entry_price"]
+
+            current_price = get_current_price(symbol)
+            if not current_price:
+                continue
+
+            if current_price < entry_price:
+                logger.info(f"[EOD] {symbol}: at a loss (entry=${entry_price:.2f} "
+                            f"current=${current_price:.2f}) — leaving stop to handle it")
+                continue
+
+            pnl = (current_price - entry_price) * pos["quantity"]
+            logger.info(f"[EOD] Closing profitable {symbol} @ ${current_price:.2f} "
+                        f"P&L=+${pnl:.2f} (market closes soon)")
+
+            if self.mode == "paper" and self.paper_trader:
+                realised = self.paper_trader.execute_sell(symbol, reason="eod_close")
+                closed.append({"symbol": symbol, "reason": "eod_close",
+                               "pnl": realised or pnl})
+            else:
+                self._close_live_position(pos, current_price, reason="eod_close")
+                closed.append({"symbol": symbol, "reason": "eod_close", "pnl": pnl})
+
+        return closed
 
     # ── Live position monitoring ──────────────────────────────────────────────
 
